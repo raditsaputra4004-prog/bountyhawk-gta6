@@ -1,29 +1,23 @@
-// Sunport Heat — the hand-in step (Node 22, standard library only).
+// Sunport Heat — the entry program for the make.fun gta6-01 bounty.
 //
-// The game itself is plain static files under game/: index.html plus its ES
-// modules, no build step, no network request, so any static server can host
-// it. This script is the only moving part: it gathers game/ and the four
-// screenshots/ into the output directory and writes dossier.json, the
-// summary the judge reads, using the vendored make.fun library.
-//
-// Run it outside the grader with MAKEFUN_OUTPUT_DIR pointing at a scratch
-// directory:
-//   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+// It hands the game in: it copies game/ and screenshots/ from this repository
+// into the output directory and writes /output/dossier.json with buildDossier
+// from the kit's library (vendor/makefun-game.ts, unchanged). It runs twice
+// with the same bytes out, uses the Node standard library only, and takes no
+// network: outside the grader, MAKEFUN_OUTPUT_DIR stands in for /output.
 
-import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-// Where this file lives, and where the hand-in goes.
+// The repository root is the directory this file lives in.
 const repoRoot = dirname(fileURLToPath(import.meta.url));
-const destDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+const outDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
-// The scorer's caps, from reference/gate.json: the dossier text budget is
-// the only one that shapes the bytes; the rest refuse an entry the scorer
-// would refuse anyway (too many or too large screenshots, too many or too
-// large game files, or a game path that is too long).
-const dossierLimits = {
+// The dossier's caps, exactly as the bounty's gate sets them: the text cap,
+// at most 4 screenshots of at most 256 KiB each, and game/'s own limits.
+const dossierCaps = {
   text_max_bytes: 163840,
   screenshots: { max: 4, max_bytes: 262144 },
   game_max_files: 993,
@@ -31,15 +25,25 @@ const dossierLimits = {
   game_path_max_bytes: 1000,
 };
 
-function copyTree(source, target) {
-  if (!existsSync(source)) return;
-  cpSync(source, target, { recursive: true });
+function clearOutputDir(dir: string): void {
+  mkdirSync(dir, { recursive: true });
+  for (const name of ['game', 'screenshots', 'dossier.json']) {
+    const target = join(dir, name);
+    if (existsSync(target)) rmSync(target, { recursive: true, force: true });
+  }
 }
 
-mkdirSync(destDir, { recursive: true });
-copyTree(join(repoRoot, 'game'), join(destDir, 'game'));
-mkdirSync(join(destDir, 'screenshots'), { recursive: true });
-copyTree(join(repoRoot, 'screenshots'), join(destDir, 'screenshots'));
+function copyEntryTree(): void {
+  clearOutputDir(outDir);
+  cpSync(join(repoRoot, 'game'), join(outDir, 'game'), { recursive: true });
+  cpSync(join(repoRoot, 'screenshots'), join(outDir, 'screenshots'), { recursive: true });
+}
 
-const dossier = buildDossier(destDir, dossierLimits);
-writeFileSync(join(destDir, 'dossier.json'), dossier);
+function writeDossier(): void {
+  const dossier = buildDossier(outDir, dossierCaps);
+  writeFileSync(join(outDir, 'dossier.json'), dossier);
+}
+
+copyEntryTree();
+writeDossier();
+console.log(`Sunport Heat handed in to ${outDir}`);

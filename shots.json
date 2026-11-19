@@ -1,1 +1,1 @@
-[{"name":"01-cover.jpg","query":"?shot=cover&seed=1337"},{"name":"02-mission.jpg","query":"?shot=mission&seed=1337"},{"name":"03-street.jpg","query":"?shot=street&seed=1337"},{"name":"04-combat.jpg","query":"?shot=combat&seed=1337"}]
+{"combat":"game/index.html?shot=combat&seed=1337","cover":"game/index.html?shot=cover&seed=1337","mission":"game/index.html?shot=mission&seed=1337","street":"game/index.html?shot=street&seed=1337"}

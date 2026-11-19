@@ -1,366 +1,351 @@
-// The story: Rex Vane owes Mara Quinn $50,000, and five jobs pay it down.
-// Each mission is a short list of objectives the world checks every frame;
-// the taxi fares are the repeatable side work between jobs.
+// The story of Sunport Heat: Rex Vane owes Mara Quinn $50,000, and five
+// jobs clear the debt. Plus repeatable taxi fares for free-roam cash.
 
-import { PLACES } from './city.js';
-import { MISSIONS } from './config.js';
-import { addHeat } from './police.js';
+import { dist } from './util.js';
+import { nearestRoadPoint } from './city.js';
+import { makeCar } from './vehicles.js';
+import { spawnGuard } from './people.js';
+import { addHeat, clearWanted, setHeat } from './police.js';
 import { floatText } from './particles.js';
+import { sfx } from './audio.js';
+import { wasPressed } from './input.js';
+import { saveGame } from './save.js';
 
-export const STORY = {
-  hero: 'Rex Vane',
-  boss: 'Mara Quinn',
-  debt: MISSIONS.debt,
-  intro:
-    'Sunport, 2026. Rex Vane is back after three years away, and Mara Quinn owns his debt: $50,000, due in full. Five jobs. No excuses.',
-};
+const DEBT = 50000;
 
+/** The five jobs, in order. Steps run one after another. */
 export const MISSION_DEFS = [
   {
-    id: 'm1',
-    title: 'Back in Sunport',
-    brief: 'Mara is waiting at the Neon Palms Club. Go see her — on foot, the club is just up the road.',
-    reward: 500,
-    objectives: [
-      { type: 'goto', place: 'club', text: 'Go to the Neon Palms Club' },
-      { type: 'goto', place: 'garage', text: 'Get a car and drive to the garage', needsCar: true },
+    id: 'm1', title: 'Back in Sunport', reward: 500,
+    briefing: 'Mara Quinn wants a word. Meet her at The Gilded Cage.',
+    steps: [
+      { kind: 'goto', text: 'Meet Mara at The Gilded Cage', x: 1800, y: 1800, radius: 100 },
+      { kind: 'interact', text: 'Talk to Mara Quinn (E)', x: 1800, y: 1800, radius: 90 },
     ],
   },
   {
-    id: 'm2',
-    title: 'Wheels for Hire',
-    brief: 'Mara needs a fast car, no questions asked. Steal a sports car and get it to the chop shop in one piece — 150 seconds, damage costs you.',
-    reward: 1200,
-    objectives: [
-      { type: 'steal', model: 'sport', text: 'Steal a sports car' },
-      { type: 'deliver', place: 'chopShop', text: 'Deliver the car to the Chop Shop', timer: 150, needsCar: true },
+    id: 'm2', title: 'Wheels for Hire', reward: 1200, timer: 150,
+    briefing: 'A Comet GT is waiting at Comet Motors. Take it to the chop shop.',
+    steps: [
+      { kind: 'goto', text: 'Steal the Comet GT at Comet Motors', x: 3000, y: 1000, radius: 110 },
+      { kind: 'steal', text: 'Get in the Comet GT', x: 3000, y: 1000, radius: 120 },
+      { kind: 'deliver', text: 'Deliver the Comet GT to the chop shop', x: 2800, y: 3000, radius: 100 },
     ],
   },
   {
-    id: 'm3',
-    title: 'Harbor Drop',
-    brief: 'Pick up the package at the docks. The moment you take it, the SPPD will be watching — lose the heat, then drop it at the Sunset Motel.',
-    reward: 2000,
-    objectives: [
-      { type: 'goto', place: 'docks', text: 'Pick up the package at the Docks' },
-      { type: 'escape', stars: 2, text: 'Lose the heat', heatOnStart: 40 },
-      { type: 'deliver', place: 'motel', text: 'Deliver the package to the Sunset Motel', needsCar: false },
+    id: 'm3', title: 'Harbor Drop', reward: 2000,
+    briefing: 'Pick up the package at the Harbor Docks, then lose the heat.',
+    steps: [
+      { kind: 'interact', text: 'Pick up the package at the Harbor Docks (E)', x: 600, y: 3000, radius: 90 },
+      { kind: 'deliver', text: 'Deliver the package to The Palms Motel', x: 2600, y: 2600, radius: 110 },
     ],
   },
   {
-    id: 'm4',
-    title: 'Payday Smash',
-    brief: 'The Gilded Cage keeps its diamonds behind glass and two guards. Smash the case, grab the stones, and get to the safehouse with the whole department behind you.',
-    reward: 3500,
-    objectives: [
-      { type: 'goto', place: 'jewelers', text: 'Get to the Gilded Cage Jewelers' },
-      { type: 'smash', text: 'Smash the display case and grab the diamonds', guards: 2 },
-      { type: 'escape', stars: 3, text: 'Escape to the Safehouse', heatOnStart: 60, place: 'safehouse' },
+    id: 'm4', title: 'Payday Smash', reward: 3500, loot: 800,
+    briefing: 'The City Hall vault. Two guards. Get in, get the cash, get out.',
+    steps: [
+      { kind: 'goto', text: 'Reach the City Hall vault', x: 2200, y: 1400, radius: 100 },
+      { kind: 'kill', text: 'Take out the guards (0/2)', x: 2200, y: 1400, radius: 200 },
+      { kind: 'interact', text: 'Grab the loot (E)', x: 2200, y: 1400, radius: 90 },
+      { kind: 'deliver', text: 'Escape to the safehouse', x: 500, y: 500, radius: 110 },
     ],
   },
   {
-    id: 'm5',
-    title: 'The Last Score',
-    brief: 'One armored van, one last job. Take the Bullion Van from the depot, hold off the escort, and bring it to Mara. Do this and the debt is gone.',
-    reward: 10000,
-    objectives: [
-      { type: 'steal', model: 'armored', text: 'Steal the Bullion Van' },
-      { type: 'chase', place: 'club', text: 'Bring the van to Mara at the Neon Palms', heatOnStart: 80 },
+    id: 'm5', title: 'The Last Score', reward: 10000,
+    briefing: 'The Bullion Van. Four stars. One drive. The debt ends tonight.',
+    steps: [
+      { kind: 'goto', text: 'Steal the Bullion Van at Northgate Mall', x: 1800, y: 600, radius: 120 },
+      { kind: 'steal', text: 'Get in the Bullion Van', x: 1800, y: 600, radius: 130 },
+      { kind: 'deliver', text: 'Bring the Bullion Van to The Gilded Cage', x: 1800, y: 1800, radius: 110 },
     ],
   },
 ];
 
+/** A fresh missions state. */
 export function makeMissions() {
   return {
-    index: 0, // which mission is current
-    completed: [],
-    active: null, // the running mission state
-    objectiveIndex: 0,
-    timer: 0,
-    timerLimit: 0,
-    failed: false,
-    done: false,
-    taxi: null, // active taxi fare
-    cashEarned: 0,
+    current: null, // { def, step, timer, car }
+    done: [],
+    guardsDown: 0,
+    tookMissionCar: false,
+    retryIn: 0,
+    storyDone: false,
+    startDelay: 0,
   };
 }
 
-export function currentMission(missions) {
-  if (missions.index >= MISSION_DEFS.length) return null;
-  return MISSION_DEFS[missions.index];
-}
-
-export function startMission(world) {
-  const def = currentMission(world.missions);
-  if (!def) return;
-  world.missions.active = { def, startedAt: world.time };
-  world.missions.objectiveIndex = 0;
-  world.missions.timer = 0;
-  world.missions.timerLimit = 0;
-  world.missions.failed = false;
-  world.message(`Mission: ${def.title}`, '#ffd34d');
-  world.message(def.brief, '#ffffff');
-  world.audio.pickup();
-  setupObjective(world);
-}
-
-function setupObjective(world) {
-  const state = world.missions.active;
-  if (!state) return;
-  const obj = state.def.objectives[world.missions.objectiveIndex];
-  if (!obj) {
-    completeMission(world);
+/** Start the next undone job. */
+export function startNextMission(S) {
+  const next = MISSION_DEFS.find((d) => !S.missions.done.includes(d.id));
+  if (!next) {
+    S.missions.storyDone = true;
     return;
   }
-  world.missions.timer = 0;
-  world.missions.timerLimit = obj.timer || 0;
-  if (obj.heatOnStart) addHeat(world.wanted, obj.heatOnStart, world.time);
-  if (obj.type === 'smash') {
-    spawnGuards(world, obj.guards || 2);
-  }
-  if (obj.type === 'steal' && obj.model === 'armored') {
-    spawnArmoredVan(world);
-  }
-  if (obj.type === 'steal' && obj.model === 'sport') {
-    spawnMarkedSport(world);
-  }
-  const place = obj.place ? PLACES[obj.place] : null;
-  world.objective = {
-    text: obj.text,
-    target: place ? { x: place.x, y: place.y, label: place.label } : null,
-    kind: obj.type,
-  };
+  startMission(S, next.id);
 }
 
-export function spawnGuards(world, count) {
-  const spot = PLACES.jewelers;
-  for (let i = 0; i < count; i += 1) {
-    world.guards.push({
-      x: spot.x + (i === 0 ? -60 : 60),
-      y: spot.y + 40,
-      angle: 0,
-      health: 60,
-      down: false,
-      shootTimer: 1 + i * 0.5,
-      speed: 120,
-    });
-  }
-  world.message('Guards! They are armed — fight or run', '#ff6b5c');
-}
-
-export function spawnArmoredVan(world) {
-  const spot = PLACES.armory;
-  const car = {
-    id: 9001,
-    x: spot.x + 46, y: spot.y - 36,
-    vx: 0, vy: 0,
-    angle: 0,
-    speed: 0,
-    model: 'armored',
-    modelName: 'Bullion Van',
-    color: '#5a6b52',
-    top: 330,
-    accel: 260,
-    kind: 'parked',
-    driver: null,
-    health: 220,
-    isPlayerCar: false,
-    marked: true,
-  };
-  world.cars.push(car);
-  world.message('The Bullion Van is at the depot — take it', '#ffd34d');
-  // Two guards watch the depot.
-  for (let i = 0; i < 2; i += 1) {
-    world.guards.push({
-      x: spot.x + (i === 0 ? -50 : 50),
-      y: spot.y + 34,
-      angle: 0,
-      health: 60,
-      down: false,
-      shootTimer: 1 + i,
-      speed: 120,
-    });
-  }
-}
-
-export function spawnMarkedSport(world) {
-  // A red sports car parked on the road by the club, marked for the job.
-  const spot = PLACES.club;
-  const car = {
-    id: 9002,
-    x: spot.x + 120, y: spot.y - 30,
-    vx: 0, vy: 0,
-    angle: 0,
-    speed: 0,
-    model: 'sport',
-    modelName: 'Comet GT',
-    color: '#c22e3d',
-    top: 520,
-    accel: 420,
-    kind: 'parked',
-    driver: null,
-    health: 100,
-    isPlayerCar: false,
-    marked: true,
-  };
-  world.cars.push(car);
-  world.message('A Comet GT is parked by the club — take it', '#ffd34d');
-}
-
-function completeObjective(world) {
-  world.missions.objectiveIndex += 1;
-  world.audio.cash();
-  const state = world.missions.active;
-  if (world.missions.objectiveIndex >= state.def.objectives.length) {
-    completeMission(world);
-  } else {
-    setupObjective(world);
-  }
-}
-
-export function completeMission(world) {
-  const def = currentMission(world.missions);
+/** Start one job by id. */
+export function startMission(S, id) {
+  const def = MISSION_DEFS.find((d) => d.id === id);
   if (!def) return;
-  world.player.cash += def.reward;
-  world.missions.cashEarned += def.reward;
-  world.missions.completed.push(def.id);
-  world.missions.index += 1;
-  world.missions.active = null;
-  world.objective = null;
-  world.audio.missionDone();
-  world.message(`Mission complete: ${def.title} — $${def.reward}`, '#7ddc7d');
-  floatText(world.particles, world.player.x, world.player.y - 30, `+$${def.reward}`, '#7ddc7d');
-  const debtLeft = Math.max(0, MISSIONS.debt - world.missions.cashEarned);
-  if (world.missions.index >= MISSION_DEFS.length) {
-    world.missions.done = true;
-    world.message(`Debt cleared. Sunport is yours, ${STORY.hero}.`, '#ffd34d');
-    world.storyComplete = true;
-  } else {
-    world.message(`Debt remaining: $${debtLeft.toLocaleString('en-US')}`, '#ffffff');
+  S.missions.current = { def, step: 0, timer: def.timer || 0, car: null };
+  S.missions.guardsDown = 0;
+  S.missions.tookMissionCar = false;
+  toast(S, `${def.title} — ${def.briefing}`);
+  sfx('mission');
+  // Stage the job's car or guards.
+  if (id === 'm2') {
+    const car = makeCar(S, 'comet', 3000, 1000, Math.PI / 2, 'mission');
+    car.missionCar = true;
+    car.color = '#c0392b';
+    // The job's car is toughened: it has to survive the delivery drive.
+    car.hp = 350;
+    car.maxHp = 350;
+    S.cars.push(car);
+    S.missions.current.car = car;
   }
-  world.save();
+  if (id === 'm5') {
+    const car = makeCar(S, 'bullion', 1800, 600, 0, 'mission');
+    car.missionCar = true;
+    S.cars.push(car);
+    S.missions.current.car = car;
+  }
 }
 
-export function failMission(world, reason) {
-  world.missions.failed = true;
-  world.missions.active = null;
-  world.objective = null;
-  world.audio.missionFail();
-  world.message(`Mission failed: ${reason}`, '#ff6b5c');
+/** Step the active job and the taxi fares. */
+export function updateMissions(S, dt) {
+  const M = S.missions;
+  if (M.startDelay > 0) {
+    M.startDelay -= dt;
+    if (M.startDelay <= 0) startNextMission(S);
+    return;
+  }
+  if (M.retryIn > 0) {
+    M.retryIn -= dt;
+    if (M.retryIn <= 0) startNextMission(S);
+    return;
+  }
+  if (M.current) {
+    updateCurrentMission(S, dt);
+  }
+  updateTaxi(S, dt);
 }
 
-// The per-frame mission engine: checks the current objective and advances
-// it when its condition is met. Returns nothing; the world reads
-// world.objective and world.missions for the HUD.
-export function stepMissions(world, dt) {
-  const state = world.missions.active;
-  if (!state) return;
-  const obj = state.def.objectives[world.missions.objectiveIndex];
-  if (!obj) return;
-  const player = world.player;
-  if (world.missions.timerLimit > 0) {
-    world.missions.timer += dt;
-    if (world.missions.timer > world.missions.timerLimit) {
-      failMission(world, 'Out of time');
+/** Advance the current job's step when its condition is met. */
+function updateCurrentMission(S, dt) {
+  const M = S.missions;
+  const cur = M.current;
+  const step = cur.def.steps[cur.step];
+  if (!step) return;
+  if (cur.timer > 0) {
+    cur.timer -= dt;
+    if (cur.timer <= 0) {
+      failMission(S, 'Out of time');
       return;
     }
   }
-  const near = (x, y, r = 70) => Math.hypot(player.x - x, player.y - y) < r;
-  if (obj.type === 'goto' || obj.type === 'deliver') {
-    const place = PLACES[obj.place];
-    if (obj.needsCar && !player.car) {
-      world.objective.hint = 'You need a car for this';
-    } else {
-      world.objective.hint = null;
-    }
-    if (near(place.x, place.y, obj.type === 'deliver' ? 80 : 70)) {
-      if (!obj.needsCar || player.car) completeObjective(world);
-    }
-  } else if (obj.type === 'steal') {
-    if (player.car && player.car.model === obj.model) completeObjective(world);
-  } else if (obj.type === 'escape') {
-    const target = obj.place ? PLACES[obj.place] : null;
-    if (world.wanted.stars === 0) {
-      if (!target) {
-        completeObjective(world);
-      } else if (near(target.x, target.y, 80)) {
-        completeObjective(world);
+  const p = S.player;
+  const d = dist(p.x, p.y, step.x, step.y);
+  switch (step.kind) {
+    case 'goto':
+      if (d < step.radius) advanceStep(S);
+      break;
+    case 'interact':
+      if (d < step.radius && wasPressed(S.input, 'KeyE')) {
+        onInteractStep(S);
+        advanceStep(S);
       }
-    }
-  } else if (obj.type === 'smash') {
-    const allDown = world.guards.length > 0 && world.guards.every((g) => g.down);
-    if (allDown && !state.lootTaken) {
-      state.lootTaken = true;
-      player.cash += 800;
-      world.message('Diamonds grabbed — now run!', '#ffd34d');
-      world.audio.cash();
-    }
-    if (state.lootTaken) completeObjective(world);
-  } else if (obj.type === 'chase') {
-    const place = PLACES[obj.place];
-    if (player.car && player.car.model === 'armored' && near(place.x, place.y, 90)) {
-      completeObjective(world);
-    }
+      break;
+    case 'steal':
+      if (M.tookMissionCar) advanceStep(S);
+      break;
+    case 'kill':
+      if (M.guardsDown >= 2) advanceStep(S);
+      break;
+    case 'deliver':
+      if (d < step.radius) completeMission(S);
+      break;
+    default:
+      break;
   }
 }
 
-// Taxi fares: a waiting pedestrian hails, the player drives them to a
-// destination, and the fare pays out with a tip for speed. Destinations are
-// road-side places only, so a fare is always reachable by car.
-const TAXI_DESTS = ['club', 'garage', 'chopShop', 'motel', 'jewelers', 'safehouse', 'hospital', 'policeHq', 'taxiStand'];
-
-export function startTaxi(world, ped) {
-  const destKey = TAXI_DESTS[Math.floor(Math.random() * TAXI_DESTS.length)];
-  const dest = PLACES[destKey];
-  const fare = 90 + Math.floor(Math.random() * 230);
-  world.missions.taxi = {
-    ped,
-    dest,
-    fare,
-    timer: 0,
-    limit: 180,
-    state: 'pickup',
-  };
-  ped.state = 'wait';
-  ped.fare = true;
-  world.message(`Taxi fare: pick up the passenger ($${fare})`, '#7ddc7d');
-}
-
-export function stepTaxi(world, dt) {
-  const taxi = world.missions.taxi;
-  if (!taxi) return;
-  const player = world.player;
-  taxi.timer += dt;
-  if (taxi.timer > taxi.limit) {
-    world.message('Fare cancelled — too slow', '#ff6b5c');
-    if (taxi.ped) {
-      taxi.ped.state = 'walk';
-      taxi.ped.fare = false;
-    }
-    world.missions.taxi = null;
+/** Side effects when a step is entered. */
+function advanceStep(S) {
+  const M = S.missions;
+  const cur = M.current;
+  cur.step += 1;
+  const step = cur.def.steps[cur.step];
+  if (!step) {
+    completeMission(S);
     return;
   }
-  if (taxi.state === 'pickup') {
-    const d = Math.hypot(player.x - taxi.ped.x, player.y - taxi.ped.y);
-    if (d < 50 && player.car) {
-      taxi.state = 'dropoff';
-      taxi.ped.state = 'riding';
-      world.message(`Drive them to ${taxi.dest.label}`, '#7ddc7d');
-    }
-  } else if (taxi.state === 'dropoff') {
-    const d = Math.hypot(player.x - taxi.dest.x, player.y - taxi.dest.y);
-    if (d < 80 && player.car) {
-      const tip = Math.max(0, Math.round((1 - taxi.timer / taxi.limit) * 120));
-      const total = taxi.fare + tip;
-      player.cash += total;
-      world.missions.cashEarned += total;
-      world.audio.cash();
-      floatText(world.particles, player.x, player.y - 30, `+$${total}`, '#7ddc7d');
-      world.message(`Fare complete: $${total} (tip $${tip})`, '#7ddc7d');
-      const idx = world.peds.indexOf(taxi.ped);
-      if (idx >= 0) world.peds.splice(idx, 1);
-      world.missions.taxi = null;
-      world.save();
+  if (cur.def.id === 'm3' && step.kind === 'deliver') {
+    // The pickup put two stars on the player.
+    setHeat(S, 35);
+    toast(S, 'The cops are onto you — lose them!');
+  }
+  if (cur.def.id === 'm4' && step.kind === 'kill') {
+    // Two guards stand between Rex and the vault.
+    spawnGuard(S, 2160, 1360);
+    spawnGuard(S, 2240, 1440);
+    toast(S, 'Two guards. Take them out.');
+  }
+  if (cur.def.id === 'm4' && step.kind === 'deliver') {
+    setHeat(S, 50);
+    toast(S, 'Three stars! Get to the safehouse!');
+  }
+  if (cur.def.id === 'm5' && step.kind === 'deliver') {
+    setHeat(S, 70);
+    toast(S, 'Four stars! Bring the van to the club!');
+  }
+  if (cur.def.id === 'm2' && step.kind === 'deliver') {
+    cur.timer = cur.def.timer;
+  }
+  if (step.kind === 'kill') {
+    M.guardsDown = 0;
+  }
+  sfx('pickup');
+}
+
+/** What an interact step does when the player presses E. */
+function onInteractStep(S) {
+  const cur = S.missions.current;
+  if (!cur) return;
+  if (cur.def.id === 'm4') {
+    // The loot from the vault.
+    S.player.cash += cur.def.loot;
+    floatText(S, S.player.x, S.player.y - 30, `+$${cur.def.loot} loot`, '#ffd24d');
+    sfx('cash');
+  }
+  if (cur.def.id === 'm1') {
+    toast(S, 'Mara: "Fifty grand, Rex. Five jobs. Don\'t keep me waiting."');
+  }
+}
+
+/** Finish the current job: pay up, save, queue the next. */
+function completeMission(S) {
+  const M = S.missions;
+  const cur = M.current;
+  if (!cur) return;
+  S.player.cash += cur.def.reward;
+  M.done.push(cur.def.id);
+  M.current = null;
+  floatText(S, S.player.x, S.player.y - 30, `+$${cur.def.reward}`, '#ffd24d');
+  toast(S, `${cur.def.title} complete — $${cur.def.reward}`);
+  sfx('cash');
+  // A clean getaway: the heat is off, the cops stand down, and the car
+  // is patched up for the next job.
+  clearWanted(S);
+  if (S.player.car) {
+    S.player.car.hp = S.player.car.maxHp;
+  }
+  if (cur.def.id === 'm5') {
+    M.storyDone = true;
+    toast(S, `Debt cleared. Sunport is yours, Rex. ($${DEBT} paid)`);
+  }
+  saveGame(S);
+  M.startDelay = 3;
+}
+
+/** A job failed: it becomes available again shortly. */
+function failMission(S, why) {
+  const M = S.missions;
+  const cur = M.current;
+  if (!cur) return;
+  M.current = null;
+  toast(S, `${cur.def.title} failed — ${why}. Try again.`);
+  sfx('fail');
+  M.retryIn = 5;
+}
+
+/** The current objective for the HUD, minimap and arrow. */
+export function currentObjective(S) {
+  const M = S.missions;
+  if (M.current) {
+    const step = M.current.def.steps[M.current.step];
+    if (step) {
+      let text = step.text;
+      if (step.kind === 'kill') text = `Take out the guards (${M.guardsDown}/2)`;
+      const out = { text, x: step.x, y: step.y };
+      if (M.current.timer > 0) out.timer = Math.ceil(M.current.timer);
+      return out;
     }
   }
+  if (S.taxi.state === 'pickup' && S.taxi.fare) {
+    return { text: 'Pick up the fare', x: S.taxi.fare.x, y: S.taxi.fare.y };
+  }
+  if (S.taxi.state === 'dropoff' && S.taxi.fare) {
+    return { text: 'Drop off the fare', x: S.taxi.fare.destX, y: S.taxi.fare.destY };
+  }
+  return null;
+}
+
+/** A fresh taxi state. */
+export function makeTaxi() {
+  return { state: 'idle', fare: null, cooldown: 8 };
+}
+
+/** Taxi fares: a waiting passenger, a ride, a payout with a speed tip. */
+function updateTaxi(S, dt) {
+  const T = S.taxi;
+  const p = S.player;
+  if (T.cooldown > 0) T.cooldown -= dt;
+  if (S.missions.current) return; // fares wait while a job is on
+  if (S.mode !== 'play' || p.onFoot || !p.car) {
+    if (T.state !== 'idle') {
+      T.state = 'idle';
+      T.fare = null;
+    }
+    return;
+  }
+  if (T.state === 'idle') {
+    if (T.cooldown <= 0) {
+      // Fares wait on a road, so a driver can always reach them.
+      const a = S.rng() * Math.PI * 2;
+      const d = 300 + S.rng() * 400;
+      const pick = nearestRoadPoint(S.city, p.x + Math.cos(a) * d, p.y + Math.sin(a) * d);
+      const b = S.rng() * Math.PI * 2;
+      const d2 = 400 + S.rng() * 500;
+      const drop = nearestRoadPoint(S.city, pick.x + Math.cos(b) * d2, pick.y + Math.sin(b) * d2);
+      T.fare = {
+        x: pick.x, y: pick.y,
+        destX: drop.x,
+        destY: drop.y,
+        startedAt: S.time,
+      };
+      T.state = 'pickup';
+    }
+    return;
+  }
+  if (T.state === 'pickup') {
+    if (dist(p.x, p.y, T.fare.x, T.fare.y) < 70) {
+      T.state = 'dropoff';
+      T.fare.startedAt = S.time;
+      toast(S, 'Fare aboard — drive to the marker');
+      sfx('pickup');
+    }
+    return;
+  }
+  if (T.state === 'dropoff') {
+    if (dist(p.x, p.y, T.fare.destX, T.fare.destY) < 70) {
+      const elapsed = S.time - T.fare.startedAt;
+      const tip = elapsed < 60 ? 60 : elapsed < 120 ? 30 : 10;
+      const pay = 40 + tip;
+      p.cash += pay;
+      floatText(S, p.x, p.y - 30, `+$${pay} fare`, '#ffd24d');
+      toast(S, `Fare paid $${pay} (tip $${tip})`);
+      sfx('cash');
+      saveGame(S);
+      T.state = 'idle';
+      T.fare = null;
+      T.cooldown = 15;
+    }
+  }
+}
+
+/** A toast message for the HUD. */
+export function toast(S, text) {
+  S.toasts.push({ text, life: 4.5 });
+  if (S.toasts.length > 4) S.toasts.shift();
 }

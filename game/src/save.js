@@ -1,32 +1,39 @@
-// Save and load: the whole campaign state in one localStorage key. The
-// game saves when a mission ends, when a fare pays out, and when the player
-// saves from the pause menu. Nothing leaves the machine.
+// Saving Sunport Heat: progress lives in localStorage under one key,
+// written on mission complete, on a fare payout, and on pause-save.
 
-import { SAVE_KEY } from './config.js';
+export const SAVE_KEY = 'sunport-heat-save-v1';
 
-export function saveGame(world) {
+/** Is there a saved game to continue? */
+export function hasSave() {
   try {
-    const data = {
-      version: 1,
-      cash: world.player.cash,
-      health: world.player.health,
-      ammo: world.player.ammo,
-      x: Math.round(world.player.x),
-      y: Math.round(world.player.y),
-      missionIndex: world.missions.index,
-      completed: world.missions.completed,
-      cashEarned: world.missions.cashEarned,
-      time: Math.round(world.time),
-      savedAt: new Date().toISOString(),
-    };
-    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-    return true;
+    return localStorage.getItem(SAVE_KEY) !== null;
   } catch (e) {
     return false;
   }
 }
 
-export function loadGame() {
+/** Write the current progress. Never throws. */
+export function saveGame(S) {
+  try {
+    const data = {
+      version: 1,
+      cash: S.player.cash,
+      hp: S.player.hp,
+      ammo: S.player.ammo,
+      x: Math.round(S.player.x),
+      y: Math.round(S.player.y),
+      done: S.missions.done.slice(),
+      storyDone: S.missions.storyDone,
+      time: S.time,
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+  } catch (e) {
+    /* storage may be unavailable; the game plays on without it */
+  }
+}
+
+/** Read the saved progress, or null. */
+export function loadSave() {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
@@ -38,12 +45,26 @@ export function loadGame() {
   }
 }
 
-export function hasSave() {
-  return loadGame() !== null;
-}
-
+/** Wipe the save (New Game). */
 export function clearSave() {
   try {
     localStorage.removeItem(SAVE_KEY);
-  } catch (e) { /* storage unavailable */ }
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+/** Apply a loaded save to the game state. */
+export function applySave(S, data) {
+  S.player.cash = data.cash || 0;
+  S.player.hp = data.hp || 100;
+  S.player.ammo = data.ammo || 24;
+  S.player.x = data.x || 1740;
+  S.player.y = data.y || 1740;
+  S.player.onFoot = true;
+  S.player.car = null;
+  S.missions.done = (data.done || []).slice();
+  S.missions.storyDone = !!data.storyDone;
+  S.camera.x = S.player.x;
+  S.camera.y = S.player.y;
 }
