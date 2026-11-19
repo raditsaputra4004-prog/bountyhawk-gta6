@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sunport Heat — an open-world crime game</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #101014; }
+  body { font-family: "Segoe UI", system-ui, sans-serif; color: #fff; }
+  #game { display: block; width: 100vw; height: 100vh; }
+  .overlay {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(160deg, rgba(16,16,20,0.82), rgba(46,20,8,0.78));
+    z-index: 10;
+  }
+  .hidden { display: none !important; }
+  .panel {
+    max-width: 560px; width: calc(100% - 48px); text-align: center;
+    background: rgba(16,16,20,0.88); border: 1px solid rgba(255,211,77,0.35);
+    border-radius: 16px; padding: 36px 40px; box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+  }
+  .kicker { letter-spacing: 0.35em; font-size: 12px; color: #ffb13c; font-weight: 700; }
+  h1 {
+    font-size: 64px; line-height: 0.95; margin: 10px 0 4px; font-weight: 900;
+    background: linear-gradient(90deg, #ffd34d, #ff7a3c 55%, #ff4d6d);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  h2 { font-size: 34px; margin-bottom: 10px; font-weight: 900; letter-spacing: 0.04em; }
+  .sub { font-size: 15px; color: #d8d8ce; line-height: 1.55; margin-bottom: 22px; }
+  .btn {
+    display: block; width: 100%; margin: 8px 0; padding: 13px 18px; font-size: 16px; font-weight: 700;
+    color: #101014; background: #ffd34d; border: none; border-radius: 10px; cursor: pointer;
+  }
+  .btn:hover { background: #ffe08a; }
+  .btn.ghost { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,0.4); }
+  .btn.ghost:hover { border-color: #ffd34d; color: #ffd34d; }
+  .howto {
+    text-align: left; font-size: 13.5px; line-height: 1.7; color: #d8d8ce;
+    background: rgba(255,255,255,0.06); border-radius: 10px; padding: 14px 18px; margin-top: 14px;
+  }
+  .howto b { color: #ffd34d; }
+  .foot { margin-top: 18px; font-size: 12px; color: #9a9a92; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="title" class="overlay hidden">
+  <div class="panel">
+    <div class="kicker">WELCOME TO</div>
+    <h1>SUNPORT<br>HEAT</h1>
+    <p class="sub">Rex Vane is back in Sunport, and Mara Quinn owns his debt: $50,000.
+      Five jobs. One city. Steal cars, outrun the SPPD, and pay it all off — or go down trying.</p>
+    <button class="btn" id="btn-new">New Game</button>
+    <button class="btn ghost" id="btn-continue">Continue</button>
+    <button class="btn ghost" id="btn-how">How to Play</button>
+    <div id="howto" class="howto hidden">
+      <b>WASD / arrows</b> — walk or drive &nbsp;·&nbsp; <b>Shift</b> — run<br>
+      <b>E</b> — get in / out of a car &nbsp;·&nbsp; <b>Space</b> — handbrake<br>
+      <b>F</b> — punch &nbsp;·&nbsp; <b>Mouse</b> — aim, click to shoot<br>
+      <b>Enter</b> — start the next mission &nbsp;·&nbsp; <b>T</b> — take a taxi fare<br>
+      <b>Esc</b> — pause &nbsp;·&nbsp; <b>M</b> — mute<br>
+      Stealing cars, hitting pedestrians and shooting all raise your wanted level.
+      Lose the cops, lay low, and the heat fades.
+    </div>
+    <div class="foot">An original game. Sunport, Rex Vane and Mara Quinn are invented for this game — no part of it comes from any commercial game.</div>
+  </div>
+</div>
+
+<div id="pause" class="overlay hidden">
+  <div class="panel">
+    <h2>PAUSED</h2>
+    <p class="sub">Sunport waits. The SPPD does not.</p>
+    <button class="btn" id="btn-resume">Resume</button>
+    <button class="btn ghost" id="btn-save">Save Game</button>
+    <button class="btn ghost" id="btn-restart-mission">Restart Current Mission</button>
+    <button class="btn ghost" id="btn-quit">Quit to Title</button>
+  </div>
+</div>
+
+<div id="end" class="overlay hidden">
+  <div class="panel">
+    <h2 id="end-title">WASTED</h2>
+    <p class="sub" id="end-text"></p>
+    <button class="btn" id="btn-respawn">Back to the Streets</button>
+    <button class="btn ghost" id="btn-end-title">Title Screen</button>
+  </div>
+</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
